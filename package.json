@@ -1,7 +1,7 @@
 {
   "name": "dsh-bas-remote",
-  "version": "0.5.0+6",
-  "description": "SAP Business Application Studio (BAS) remote dev spaces for DeepSeek Harness: landscape login, dev-space lifecycle, and SSH dev-channel tunnels",
+  "version": "0.6.0",
+  "description": "SAP Business Application Studio (BAS) remote dev spaces for DeepSeek Harness: landscape login, dev-space lifecycle, and SSH dev-channel tunnels. The BAS protocol lives in a Rust library behind a C ABI; this package is the thin host.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "lib/index.js",
@@ -13,7 +13,8 @@
   },
   "files": [
     "lib",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "native"
   ],
   "dsh": {
     "bundle": {
@@ -33,8 +34,7 @@
     "@deepseek-ai/dsh-credentials": "^0.1.0 || ^0.2.0 || 0.2.0-rc.2 || 0.2.1-alpha.1",
     "@deepseek-ai/dsh-commands": "^0.1.0 || ^0.2.0 || 0.2.0-rc.2 || 0.2.1-alpha.1",
     "@deepseek-ai/dsh-system-prompt": "^0.1.0 || ^0.2.0 || 0.2.0-rc.2 || 0.2.1-alpha.1",
-    "@deepseek-ai/schemastery": "^3.18.0",
-    "ws": "^8.0.0"
+    "@deepseek-ai/schemastery": "^3.18.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-commands": {
@@ -45,12 +45,12 @@
     }
   },
   "dependencies": {
-    "@microsoft/dev-tunnels-ssh": "3.12.42",
-    "@microsoft/dev-tunnels-ssh-tcp": "3.12.42",
-    "ssh2": "^1.17.0"
+    "koffi": "^3.3.3"
   },
   "scripts": {
-    "test": "node test/bridge-server.test.mjs && node test/client.test.mjs && node test/ports.test.mjs",
-    "test:live": "node test/live-devspace.mjs"
+    "test": "node test/client.test.mjs && node test/ports.test.mjs && node test/host-native.test.mjs",
+    "test:live": "node test/live-devspace.mjs",
+    "test:native": "node test/native.test.mjs",
+    "build:native": "cargo build --release -p bas-api"
   }
 }

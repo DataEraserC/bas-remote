@@ -1,1 +1,4 @@
 node_modules/
+target/
+native/libbas_api.*
+.dsh-worktrees/

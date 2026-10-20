@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.0
+
+### Changed
+- **The BAS protocol moved out of JavaScript and into a Rust workspace behind a C ABI.** The plugin used to carry ~5 700 lines of Node that spoke to a landscape, opened the dev-channel WebSocket, ran an SSH transport, forwarded ports and installed an SFTP server. All of that is now `bas-core`; the harness half is a thin host that calls one C function. The reason is portability: the protocol no longer depends on a harness platform, a Node version, or `@microsoft/dev-tunnels-ssh`.
+  - `crates/bas-core` — protocol layer: landscape REST, dev-channel SSH-over-WebSocket, `direct-tcpip` forwarding, SFTP bridge, SSH config text. No filesystem, terminal, environment or process access; `crates/bas-core/tests/purity.rs` fails the build if that erodes.
+  - `crates/bas-api` — the C ABI (`bas_call` / `bas_free` / `bas_version`, documented in `docs/abi.md`). It owns the two things the protocol layer must not: effects (files, listeners) and live handles (tunnels, sign-ins).
+  - `crates/bas-cli` — `bas`, the same operations from a shell, which is also the proof that no harness is required.
+- **The dev channel is implemented against the protocol instead of a JavaScript SSH stack.** `russh` + `tokio-tungstenite` speak SSH over the dev-channel WebSocket directly, replacing `@microsoft/dev-tunnels-ssh`, `@microsoft/dev-tunnels-ssh-tcp`, `ws` and `ssh2` (all four are gone from `dependencies`). The behaviour is unchanged: `wss://port33765-<host>:443`, the landscape JWT as a bearer token, `none` SSH authentication because the WebSocket already authorised the caller, then `direct-tcpip` to the dev space's `127.0.0.1:2222`.
+- **`lib/native.js` replaces four protocol modules.** `lib/landscape.js`, `lib/tunnel.js`, `lib/bridge.js` and `lib/sshconfig.js` are deleted. Every remaining BAS call in `lib/index.js` is one `call(op, args)` from `docs/abi.md`; the tool surface, `/bas` subcommands, `/bas-remote/*` routes, config schema and `state.json` shape are unchanged.
+- **The credential id is byte-identical to the 0.5.x implementation**, so landscapes that were already signed in stay signed in after the upgrade. `test/host-native.test.mjs` pins the value.
+
+### Added
+- `docs/abi.md` — the complete contract between the halves: the three exported functions, the response envelope, the operation table, and why handles exist.
+- `crates/bas-core/tests/devchannel_loopback.rs` — an in-process WebSocket server that speaks SSH (with `none` auth and `direct-tcpip`), so the one path that cannot be mocked is exercised end to end without a BAS landscape.
+- `test/native.test.mjs` — the ABI against a real SSH server: exit codes, stderr, background-child commands, `stat`, SSH config round-trip, and a per-call leak check.
+- `test/host-native.test.mjs` — the seam: real plugin, real FFI, real Rust. It skips (rather than fails) when the library is absent, so `npm test` still runs without a Rust toolchain.
+- `flake.nix` — builds `bas-native` (the library) and the bundle that installs it at `native/libbas_api.so`, which `lib/native.js` finds without any environment variable.
+
+### Fixed
+- **A two-call `probe → allocate → call` ABI would have run every operation twice.** The first draft of `docs/abi.md` specified that pattern; it starts two bridge daemons per connect, because "report the size needed" means running the operation to learn the size. `bas_call` now returns an owned string that the caller frees once with `bas_free`.
+- **`exec` hung when a remote command left a background process.** A daemon, a `nohup` or the bridge's own start command inherits the channel, so the server sends the exit status but never closes it, and a reader waiting for `close` waits forever. Reading now stops a short grace window after the exit status.
+- **`exec` lost the exit status when `eof` arrived first**, which made every failed command look successful (exit code `-1` was reported as if the command ran). The reader now waits for the exit status after `eof`.
+- **The SFTP bridge reported `stopped: false` after a successful stop**, because it answered from a pre-kill probe instead of the port's actual state.
+
 ## 0.5.0+6
 
 ### Changed
