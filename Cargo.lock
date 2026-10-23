@@ -158,7 +158,7 @@ dependencies = [
 
 [[package]]
 name = "bas-api"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "bas-core",
  "futures-util",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "bas-cli"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "bas-core",
@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "bas-core"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
  "futures-util",

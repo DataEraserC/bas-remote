@@ -140,13 +140,13 @@ await check('stat tells a directory from a missing path', async () => {
     port: PORT,
     key: KEY,
     username: USER,
-    path: '/definitely-not-here-dsh-bas-remote',
+    path: '/definitely-not-here-bas-remote',
   })
   assert.equal(missing.exists, false)
 })
 
 await check('an SSH config publish round-trips through a temp file', async () => {
-  const target = join(homedir(), '.dsh-bas-remote-test-sshconfig')
+  const target = join(homedir(), '.bas-remote-test-sshconfig')
   const published = await native.call('ssh_config_publish', {
     target,
     section: 'bas.test.example',

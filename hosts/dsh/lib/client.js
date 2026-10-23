@@ -1,4 +1,4 @@
-// dsh-bas-remote — client half (browser).
+// bas-remote — client half (browser).
 //
 // A settings section page showing the BAS remote-dev-space state: configured
 // landscapes with sign-in status, dev-space lists, and one-click connect /
@@ -10,14 +10,14 @@
 // --dsw-alias-* tokens).  No bundler required.
 
 window.__ModuleLoader__.load({
-  id: 'dsh-bas-remote',
+  id: 'bas-remote',
   factory: (require) => {
     var React = require('react')
     var module = { exports: {} }
     var exports = module.exports
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
-    var NS = 'dsh-bas-remote'
+    var NS = 'bas-remote'
 
     // ── i18n ──────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ window.__ModuleLoader__.load({
         'loginPortHint':        '浏览器必须能访问此地址：',
         'tunnels':              '活跃隧道',
         'noTunnels':            '暂无活跃隧道',
-        'pollError':            '无法连接到 dsh-bas-remote 后端',
+        'pollError':            '无法连接到 bas-remote 后端',
         'noPorts':              '暂无固定端口分配',
         'portsStrict':          '严格模式：端口被占用时报错',
         'portsLenient':         '宽松模式：端口被占用时自动回退',
@@ -121,7 +121,7 @@ window.__ModuleLoader__.load({
         'loginPortHint':        'The browser must reach this address:',
         'tunnels':              'Active Tunnels',
         'noTunnels':            'No active tunnels.',
-        'pollError':            'Cannot reach dsh-bas-remote backend',
+        'pollError':            'Cannot reach bas-remote backend',
         'noPorts':              'No fixed port assignments',
         'portsStrict':          'Strict mode: error when port is occupied',
         'portsLenient':         'Lenient mode: fallback to random when port is occupied',
@@ -928,7 +928,7 @@ window.__ModuleLoader__.load({
     // The Plugins-page configuration row (`plugins.row.config`). The Host
     // resolves it through rowConfigKey(package name, row id): the row id is
     // the id of this bundle's cordis.patch.yml insert entry and it equals the
-    // package name (dsh-bas-remote), so a single key covers both spellings.
+    // package name (bas-remote), so a single key covers both spellings.
     // `view: 'summary'` is the card one-liner (doubling as the detail page's
     // fallback description); `view: 'page'` reuses the settings page body —
     // BAS state and actions ride the plugin's own bridge, not the Host's
@@ -975,7 +975,7 @@ window.__ModuleLoader__.load({
         return slots.register(
           {
             name: 'settings.section',
-            id: 'dsh-bas-remote',
+            id: 'bas-remote',
             order: 42,
             label: function () { return tr('nav') },
             locale: NS,
@@ -989,7 +989,7 @@ window.__ModuleLoader__.load({
         return slots.register(
           {
             name: 'shell.overlay',
-            id: 'dsh-bas-remote',
+            id: 'bas-remote',
             order: 25,
             locale: NS,
           },
@@ -1000,7 +1000,7 @@ window.__ModuleLoader__.load({
       // Plugins-page configuration row: the card's configure control opens
       // this entry's page, headed by the summary one-liner when the bundle
       // declares no description. Key = rowConfigKey(package name, row id),
-      // both of which are dsh-bas-remote (package name == patch insert id).
+      // both of which are bas-remote (package name == patch insert id).
       slots.inject('plugins.row.config', function () {
         return slots.register(
           {

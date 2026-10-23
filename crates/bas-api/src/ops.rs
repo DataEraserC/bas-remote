@@ -306,7 +306,7 @@ fn write_private(target: &std::path::Path, text: &str) -> Result<(), Error> {
             Error::transport(format!("cannot create {}: {error}", parent.display()))
         })?;
     }
-    let temp = target.with_extension("dsh-bas-remote.tmp");
+    let temp = target.with_extension("bas-remote.tmp");
     std::fs::write(&temp, text)
         .map_err(|error| Error::transport(format!("cannot write {}: {error}", temp.display())))?;
     #[cfg(unix)]

@@ -1,6 +1,6 @@
 'use strict'
 
-// dsh-bas-remote — SFTP bridge server.
+// bas-remote — SFTP bridge server.
 //
 // This file does NOT run in the harness. It is uploaded into a BAS dev space and
 // started there by `lib/bridge.js`, because the dev space's own sshd is dropbear
@@ -163,7 +163,7 @@ function setAttrs(target, attrs, done) {
 
 let clientCount = 0
 
-const server = new Server({ hostKeys: [fs.readFileSync(hostKeyPath)], ident: 'dsh-bas-remote-sftp-bridge' }, (client) => {
+const server = new Server({ hostKeys: [fs.readFileSync(hostKeyPath)], ident: 'bas-remote-sftp-bridge' }, (client) => {
   clientCount += 1
   log(`client connected (${clientCount} active)`)
 
@@ -205,7 +205,7 @@ const server = new Server({ hostKeys: [fs.readFileSync(hostKeyPath)], ident: 'ds
         child.stdout.on('data', (chunk) => stream.write(chunk))
         child.stderr.on('data', (chunk) => stream.write(chunk))
         child.on('error', (error) => {
-          stream.write(`dsh-bas-remote: cannot run ${shellPath}: ${error.message}\n`)
+          stream.write(`bas-remote: cannot run ${shellPath}: ${error.message}\n`)
           finish(127, null)
         })
         child.on('exit', finish)

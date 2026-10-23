@@ -143,13 +143,13 @@ pub async fn begin(landscape: &str, host: &str, port: u16) -> Result<(String, St
                     (_, "/ext-login") => (
                         "405 Method Not Allowed",
                         Some("text/plain"),
-                        "dsh-bas-remote: POST only",
+                        "bas-remote: POST only",
                         None,
                     ),
                     _ => (
                         "404 Not Found",
                         Some("text/plain"),
-                        "dsh-bas-remote: not found",
+                        "bas-remote: not found",
                         None,
                     ),
                 };

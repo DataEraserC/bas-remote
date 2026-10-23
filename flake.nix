@@ -1,5 +1,5 @@
 {
-  description = "dsh-bas-remote: BAS dev spaces for DeepSeek Harness, with the protocol layer in Rust";
+  description = "bas-remote: SAP BAS dev spaces with a Rust protocol layer and harness-agnostic hosts";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -47,7 +47,7 @@
             doCheck = false;
             meta = with pkgs.lib; {
               description = "BAS protocol layer (landscape REST, dev-channel SSH, SFTP bridge)";
-              homepage = "https://github.com/DataEraserC/dsh-bas-remote";
+              homepage = "https://github.com/DataEraserC/bas-remote";
               license = licenses.asl20;
               maintainers = [ { name = "DataEraserC"; github = "DataEraserC"; } ];
               platforms = platforms.unix;
@@ -58,29 +58,29 @@
           bas-native = basNative;
 
           default = pkgs.dsh.buildDshBundle (finalAttrs: {
-            pname = "dsh-bas-remote";
-            version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
-            src = ./.;
+            pname = "bas-remote";
+            version = (builtins.fromJSON (builtins.readFile ./hosts/dsh/package.json)).version;
+            src = ./hosts/dsh;
             npmFlags = [ "--legacy-peer-deps" ];
             # Regenerate with `nix build .#default` after `npm install` changes
             # package-lock.json; the error names the hash it got.
-            npmDepsHash = "sha256-N/ZPADTHx/jHwZGy2pG0Vi/8Ex6AJIFU7U9jAa2lxsc=";
+            npmDepsHash = "sha256-zUltk4YRO/zi0t+B8Kc2pfjF6Sz9gGu2cMqjxEC4EDQ=";
             dontNpmBuild = true;
             linkKernelNodeModules = pkgs.dsh.dsh-kernel;
 
             postInstall = ''
               # The protocol layer ships beside the host, and the loader finds it
               # at `native/` without any environment variable.
-              mkdir -p $out/lib/node_modules/dsh-bas-remote/native
+              mkdir -p $out/lib/node_modules/bas-remote/native
               install -m 0755 ${basNative}/lib/libbas_api.so \
-                $out/lib/node_modules/dsh-bas-remote/native/libbas_api.so
-              test -f $out/lib/node_modules/dsh-bas-remote/lib/client.js
+                $out/lib/node_modules/bas-remote/native/libbas_api.so
+              test -f $out/lib/node_modules/bas-remote/lib/client.js
             '';
 
             meta = with pkgs.lib; {
-              description = "SAP Business Application Studio remote dev spaces for DeepSeek Harness";
-              homepage = "https://github.com/DataEraserC/dsh-bas-remote";
-              changelog = "https://github.com/DataEraserC/dsh-bas-remote/blob/main/CHANGELOG.md";
+              description = "SAP Business Application Studio remote dev spaces, as a Rust library with a DeepSeek Harness host";
+              homepage = "https://github.com/DataEraserC/bas-remote";
+              changelog = "https://github.com/DataEraserC/bas-remote/blob/main/CHANGELOG.md";
               license = licenses.asl20;
               maintainers = [ { name = "DataEraserC"; github = "DataEraserC"; } ];
               platforms = platforms.unix;

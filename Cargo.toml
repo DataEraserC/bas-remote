@@ -4,10 +4,10 @@ members = ["crates/bas-core", "crates/bas-api", "crates/bas-cli"]
 default-members = ["crates/bas-cli"]
 
 [workspace.package]
-version = "0.6.1"
+version = "0.7.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/DataEraserC/dsh-bas-remote"
+repository = "https://github.com/DataEraserC/bas-remote"
 
 [workspace.dependencies]
 anyhow = "1"

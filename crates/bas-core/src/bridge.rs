@@ -23,7 +23,7 @@ use crate::model::{BridgeInfo, BridgeState};
 use crate::sshclient::SshClient;
 
 /// Where the bridge lives inside the dev space, relative to `$HOME`.
-pub const DEFAULT_BRIDGE_DIR: &str = ".dsh-bas-remote/sftp-bridge";
+pub const DEFAULT_BRIDGE_DIR: &str = ".bas-remote/sftp-bridge";
 /// Port the bridge listens on inside the dev space.
 pub const DEFAULT_BRIDGE_PORT: u16 = 2223;
 /// Chunk size for the base64 upload: dropbear caps the exec command length.
@@ -490,14 +490,11 @@ fn public_blob(key_pem: &str) -> Result<String> {
 /// makes the key stable across reconnects.
 fn derive_host_key(key_pem: &str) -> Result<String> {
     use russh::keys::ssh_key::private::{Ed25519Keypair, Ed25519PrivateKey, KeypairData};
-    let seed = Sha256::digest(format!("dsh-bas-remote bridge host key\n{key_pem}").as_bytes());
+    let seed = Sha256::digest(format!("bas-remote bridge host key\n{key_pem}").as_bytes());
     let seed: [u8; 32] = seed.into();
     let pair = Ed25519Keypair::from(Ed25519PrivateKey::from_bytes(&seed));
-    let key =
-        russh::keys::PrivateKey::new(KeypairData::Ed25519(pair), "dsh-bas-remote-sftp-bridge")
-            .map_err(|error| {
-                Error::invalid(format!("cannot build the bridge host key: {error}"))
-            })?;
+    let key = russh::keys::PrivateKey::new(KeypairData::Ed25519(pair), "bas-remote-sftp-bridge")
+        .map_err(|error| Error::invalid(format!("cannot build the bridge host key: {error}")))?;
     key.to_openssh(russh::keys::ssh_key::LineEnding::LF)
         .map(|pem| pem.to_string())
         .map_err(|error| Error::invalid(format!("cannot encode the bridge host key: {error}")))

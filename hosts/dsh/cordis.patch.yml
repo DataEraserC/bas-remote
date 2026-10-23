@@ -1,0 +1,4 @@
+# bas-remote bundle patch: registers the plugin in a profile's layer stack.
+- insert:
+    - id: bas-remote
+      name: 'bas-remote'

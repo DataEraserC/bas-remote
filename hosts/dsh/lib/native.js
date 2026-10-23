@@ -1,4 +1,4 @@
-// dsh-bas-remote — native protocol layer (koffi FFI).
+// bas-remote — native protocol layer (koffi FFI).
 //
 // This module is the DSH half's only contact with BAS. Everything that talks
 // to a landscape, a dev channel or a dev space lives in `libbas_api` behind the
@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 const require = createRequire(import.meta.url)
 
 /** `major.minor` of the ABI in docs/abi.md this host was written against. */
-export const ABI_VERSION = '0.6'
+export const ABI_VERSION = '0.7'
 const [ABI_MAJOR, ABI_MINOR] = ABI_VERSION.split('.').map((part) => Number.parseInt(part, 10))
 
 /** Operations that are pure and cheap, so a synchronous call site may use them. */

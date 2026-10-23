@@ -1,4 +1,4 @@
-// dsh-bas-remote — SAP Business Application Studio (BAS) remote dev spaces for
+// bas-remote — SAP Business Application Studio (BAS) remote dev spaces for
 // DeepSeek Harness.
 //
 // Host half. This plugin turns a BAS landscape into usable remote SSH
@@ -39,7 +39,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 
 import { call, nativeStatus } from './native.js'
 
-export const name = 'dsh-bas-remote'
+export const name = 'bas-remote'
 
 export const inject = ['tools', 'credentials', 'systemPrompt', 'commands']
 
@@ -52,7 +52,7 @@ const DEFAULT_LOGIN_PORT = 55532
 /** Default port the SFTP bridge listens on inside a dev space. */
 const DEFAULT_BRIDGE_PORT = 2223
 /** Default bridge directory inside a dev space (`~` when relative). */
-const DEFAULT_BRIDGE_DIR = '.dsh-bas-remote/sftp-bridge'
+const DEFAULT_BRIDGE_DIR = '.bas-remote/sftp-bridge'
 
 export const Config = z.object({
   /** Interface the landscape login page posts its token back to. */
@@ -73,12 +73,12 @@ export const Config = z.object({
   /**
    * Where dev-space SSH endpoints are published:
    * `off` (default) writes nothing and reports the block to paste instead,
-   * `fragment` maintains `<sshDir>/dsh-bas-remote.conf` for an `Include`,
+   * `fragment` maintains `<sshDir>/bas-remote.conf` for an `Include`,
    * `config` adds a marked block to `sshConfigPath`/`~/.ssh/config`.
    * A nix/home-manager managed config is left untouched in every mode.
    */
   sshConfigMode: z.string().default('off'),
-  /** Fragment file used in `fragment` mode (default `<sshDir>/dsh-bas-remote.conf`). */
+  /** Fragment file used in `fragment` mode (default `<sshDir>/bas-remote.conf`). */
   sshConfigFragmentPath: z.string().default(''),
   /** Deprecated alias for `sshConfigMode: 'config'`; leave false. */
   manageSshConfig: z.boolean().default(false),
@@ -331,7 +331,7 @@ function registerTransports(ctx, routes) {
     const disposers = routes.map((route) =>
       inner.get('webServer').register({ kind: 'exact', path: route.path, handler: route.handler }),
     )
-    inner.effect(() => () => disposers.forEach((dispose) => dispose()), 'dsh-bas-remote.web-routes')
+    inner.effect(() => () => disposers.forEach((dispose) => dispose()), 'bas-remote.web-routes')
   })
 
   ctx.inject(['connection'], (inner) => {
@@ -378,10 +378,10 @@ function registerTransports(ctx, routes) {
           }),
         )
       } catch (error) {
-        console.warn(`[dsh-bas-remote] route ${route.path} was not registered: ${error.message}`)
+        console.warn(`[bas-remote] route ${route.path} was not registered: ${error.message}`)
       }
     }
-    inner.effect(() => () => disposers.forEach((dispose) => dispose()), 'dsh-bas-remote.fetch-routes')
+    inner.effect(() => () => disposers.forEach((dispose) => dispose()), 'bas-remote.fetch-routes')
   })
 }
 
@@ -407,7 +407,7 @@ export function apply(ctx, config) {
 
   const paths = resolveSshPaths({ sshConfigPath: config.sshConfigPath, sshDir: config.sshDir })
   const log = (level, message) => {
-    if (config.debug || level === 'warn') console.warn(`[dsh-bas-remote] ${message}`)
+    if (config.debug || level === 'warn') console.warn(`[bas-remote] ${message}`)
   }
 
   let state = readState()
@@ -824,14 +824,14 @@ export function apply(ctx, config) {
   /** @returns {string} the fragment file this plugin owns in `fragment` mode. */
   function sshFragmentPath() {
     // Defaults next to the key directory, which follows sshDir/sshConfigPath.
-    return config.sshConfigFragmentPath || join(paths.dir, 'dsh-bas-remote.conf')
+    return config.sshConfigFragmentPath || join(paths.dir, 'bas-remote.conf')
   }
 
   /** Header written when the fragment file is created. */
   const SSH_FRAGMENT_HEADER = [
-    '# dsh-bas-remote — dev-space SSH endpoints maintained by the harness plugin.',
+    '# bas-remote — dev-space SSH endpoints maintained by the harness plugin.',
     '# Reference it from your own SSH config, e.g. in home-manager:',
-    '#   Include ~/.ssh/dsh-bas-remote.conf',
+    '#   Include ~/.ssh/bas-remote.conf',
     '',
     '',
   ].join('\n')
@@ -1681,7 +1681,7 @@ export function apply(ctx, config) {
 
   if (config.promptSection) {
     ctx.systemPrompt.section({
-      name: 'dsh-bas-remote',
+      name: 'bas-remote',
       order: 89,
       text: () => {
         // Synchronous by contract, so it reads the cached tunnel status that
@@ -1698,7 +1698,7 @@ export function apply(ctx, config) {
               ` (alias ${entry.section}); adopt it with rw_connect host=127.0.0.1 port=${description.localPort} username=${config.sshUser} privateKeyPath=${entry.keyFile}.`,
           )
         }
-        lines.push('These tunnels are managed by dsh-bas-remote (tools: bas_status, bas_connect, bas_disconnect).')
+        lines.push('These tunnels are managed by bas-remote (tools: bas_status, bas_connect, bas_disconnect).')
         return lines.join('\n')
       },
     })
@@ -2013,7 +2013,7 @@ export function apply(ctx, config) {
       }
       tunnels.clear()
     },
-    'dsh-bas-remote.teardown',
+    'bas-remote.teardown',
   )
 
   if (config.defaultLandscape) {

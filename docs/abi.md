@@ -49,7 +49,7 @@ Returning an owned string costs one allocation and removes the trap. A host
 that cannot allocate is out of memory anyway.
 
 ```c
-const char *bas_version(void);   /* static, never freed, e.g. "0.6.0" */
+const char *bas_version(void);   /* static, never freed, e.g. "0.7.0" */
 ```
 
 A panic inside any op is caught and returned as an `internal` error; it never

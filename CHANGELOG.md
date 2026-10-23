@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+### Changed
+- **The project is renamed `bas-remote` and reorganised around the library.** It stopped being a harness plugin with a Rust part and became a Rust library with a harness host, so the npm package, the DSH plugin id, the Nix attribute and the GitHub repository all read `bas-remote` now. The DeepSeek Harness half moved into `hosts/dsh/` — its `package.json`, `lib/`, `test/`, `native/` and `cordis.patch.yml` — so the repository root holds only the Rust workspace, the shared docs and the flake. A second host is a sibling directory under `hosts/`.
+- **User-facing paths follow the new name.** The SSH fragment is `~/.ssh/bas-remote.conf`, the SFTP bridge installs into `~/.bas-remote/sftp-bridge/` inside the dev space, and the SSH config markers are `# >>> bas-remote <section>`. Blocks written by 0.6.x under the old markers are still recognised and removed, so an upgraded install does not end up with two blocks for the same `Host`. The plugin state stays at `~/.dsh/bas-remote/state.json`, which already used this name, so stored landscapes and port assignments are read as before.
+- The credential id is unchanged: it is derived from the landscape URL alone, so signed-in landscapes stay signed in.
+
 ## 0.6.1
 
 ### Fixed

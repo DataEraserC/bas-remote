@@ -1,7 +1,7 @@
 {
-  "name": "dsh-bas-remote",
-  "version": "0.6.1",
-  "description": "SAP Business Application Studio (BAS) remote dev spaces for DeepSeek Harness: landscape login, dev-space lifecycle, and SSH dev-channel tunnels. The BAS protocol lives in a Rust library behind a C ABI; this package is the thin host.",
+  "name": "bas-remote",
+  "version": "0.7.0",
+  "description": "SAP Business Application Studio (BAS) dev spaces: landscape login, dev-space lifecycle and SSH dev-channel tunnels. The protocol is a Rust library behind a C ABI; this package is the DeepSeek Harness host.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "lib/index.js",

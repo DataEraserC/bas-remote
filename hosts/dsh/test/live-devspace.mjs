@@ -13,7 +13,7 @@
 //   node test/live-devspace.mjs
 //
 // Nothing is written outside a scratch DSH_HOME and the dev space's own
-// ~/.dsh-bas-remote/sftp-bridge directory (which is the feature under test).
+// ~/.bas-remote/sftp-bridge directory (which is the feature under test).
 
 import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

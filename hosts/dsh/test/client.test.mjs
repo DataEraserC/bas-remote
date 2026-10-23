@@ -282,7 +282,7 @@ check('the animated element uses the injected keyframes name', () => {
 
 check('the stylesheet is tagged so it can be found and deduped', () => {
   const style = spin.document.styles[0]
-  assert.equal(style.dataset.plugin, 'dsh-bas-remote')
+  assert.equal(style.dataset.plugin, 'bas-remote')
   assert.ok(style.dataset.pluginCss, 'no data-plugin-css id')
 })
 
@@ -338,7 +338,7 @@ check('a port row offers a remove control', () => {
 // ── plugins.row.config (the Plugins-page configuration row) ────────────────
 //
 // The Host looks the row up through rowConfigKey(package name, row id). Both
-// spellings are `dsh-bas-remote` for this bundle (package name == the id of
+// spellings are `bas-remote` for this bundle (package name == the id of
 // the cordis.patch.yml insert entry), so one key covers the lookup; without it
 // the card would have no configure control.
 
@@ -347,8 +347,8 @@ const legacyItem = registrations.find((entry) => entry.meta.name === 'plugins.it
 
 check('registers a plugins.row.config entry keyed by package name and row id', () => {
   assert.ok(rowConfig, 'plugins.row.config is not registered')
-  assert.equal(rowConfig.meta.key, 'dsh-bas-remote#dsh-bas-remote')
-  assert.equal(rowConfig.meta.locale, 'dsh-bas-remote')
+  assert.equal(rowConfig.meta.key, 'bas-remote#bas-remote')
+  assert.equal(rowConfig.meta.locale, 'bas-remote')
 })
 
 check('the row summary view is a translated one-liner', () => {
@@ -366,7 +366,7 @@ check('the row page view reuses the settings page body', () => {
 
 check('hosts without plugins.row.config fall back to plugins.item', () => {
   assert.ok(legacyItem, 'legacy plugins.item is not registered while row.config is absent')
-  assert.equal(legacyItem.meta.id, 'dsh-bas-remote')
+  assert.equal(legacyItem.meta.id, 'bas-remote')
   assert.match(String(legacyItem.meta.label()), /Sign in to BAS landscapes/)
 })
 

@@ -8,26 +8,58 @@
 //! Entries are delimited so only this plugin's own blocks are ever touched:
 //!
 //! ```text
-//! # >>> dsh-bas-remote <section>
+//! # >>> bas-remote <section>
 //! Host <section>
 //!   HostName 127.0.0.1
 //!   Port <port>
 //!   User <user>
 //!   IdentityFile <key>
 //!   NoHostAuthenticationForLocalhost yes
-//! # <<< dsh-bas-remote <section>
+//! # <<< bas-remote <section>
 //! ```
+//!
+//! Blocks written before the rename are still recognised, so an existing
+//! `~/.ssh/config` does not keep a stale block forever.
+
+/// Owner name written into new markers.
+pub const MARKER_OWNER: &str = "bas-remote";
+
+/// Owner name used before the rename; read-only compatibility.
+const LEGACY_MARKER_OWNER: &str = "dsh-bas-remote";
+
+/// Every owner name whose blocks this crate will strip.
+const KNOWN_OWNERS: [&str; 2] = [MARKER_OWNER, LEGACY_MARKER_OWNER];
 
 /// Marker that opens a managed block.
 #[must_use]
 pub fn block_start(section: &str) -> String {
-    format!("# >>> dsh-bas-remote {section}")
+    format!("# >>> {MARKER_OWNER} {section}")
 }
 
 /// Marker that closes a managed block.
 #[must_use]
 pub fn block_end(section: &str) -> String {
-    format!("# <<< dsh-bas-remote {section}")
+    format!("# <<< {MARKER_OWNER} {section}")
+}
+
+/// The legacy opener for `section`, kept only so old blocks can be removed.
+fn legacy_block_start(section: &str) -> String {
+    format!("# >>> {LEGACY_MARKER_OWNER} {section}")
+}
+
+/// The legacy closer for `section`.
+fn legacy_block_end(section: &str) -> String {
+    format!("# <<< {LEGACY_MARKER_OWNER} {section}")
+}
+
+/// Start markers (current and legacy) that open a block for `section`.
+fn start_markers(section: &str) -> [String; 2] {
+    [block_start(section), legacy_block_start(section)]
+}
+
+/// End markers (current and legacy) that close a block for `section`.
+fn end_markers(section: &str) -> [String; 2] {
+    [block_end(section), legacy_block_end(section)]
 }
 
 /// Render the `Host` block for one dev space.
@@ -62,19 +94,19 @@ pub fn block(
 /// Remove the managed block of `section`, returning the new text.
 #[must_use]
 pub fn strip_block(text: &str, section: &str) -> (String, bool) {
-    let start = block_start(section);
-    let end = block_end(section);
+    let starts = start_markers(section);
+    let ends = end_markers(section);
     let mut kept: Vec<&str> = Vec::new();
     let mut skipping = false;
     let mut removed = false;
     for line in text.split('\n') {
-        if !skipping && line.trim() == start {
+        if !skipping && starts.iter().any(|start| line.trim() == start) {
             skipping = true;
             removed = true;
             continue;
         }
         if skipping {
-            if line.trim() == end {
+            if ends.iter().any(|end| line.trim() == end) {
                 skipping = false;
             }
             continue;
@@ -173,11 +205,16 @@ pub fn upsert_block(text: &str, existed: bool, entry: &Entry<'_>) -> (String, bo
 /// List the `Host` aliases this crate manages in a config text.
 #[must_use]
 pub fn managed_sections(text: &str) -> Vec<String> {
-    const PREFIX: &str = "# >>> dsh-bas-remote ";
+    let prefixes: Vec<String> = KNOWN_OWNERS
+        .iter()
+        .map(|owner| format!("# >>> {owner} "))
+        .collect();
     text.split('\n')
         .filter_map(|line| {
             let trimmed = line.trim();
-            trimmed.strip_prefix(PREFIX).map(str::to_string)
+            prefixes
+                .iter()
+                .find_map(|prefix| trimmed.strip_prefix(prefix.as_str()).map(str::to_string))
         })
         .collect()
 }
@@ -185,16 +222,16 @@ pub fn managed_sections(text: &str) -> Vec<String> {
 /// Read the `Port` recorded in the managed block of `section`.
 #[must_use]
 pub fn managed_port(text: &str, section: &str) -> Option<u16> {
-    let start = block_start(section);
-    let end = block_end(section);
+    let starts = start_markers(section);
+    let ends = end_markers(section);
     let mut inside = false;
     for line in text.split('\n') {
         let trimmed = line.trim();
-        if trimmed == start {
+        if starts.iter().any(|start| trimmed == start) {
             inside = true;
             continue;
         }
-        if inside && trimmed == end {
+        if inside && ends.iter().any(|end| trimmed == end) {
             return None;
         }
         if inside
@@ -217,8 +254,8 @@ mod tests {
         assert!(plain.starts_with("Host h.example.ws-1\n"));
         assert!(!plain.contains("# >>>"));
         let marked = block("s", "/k", 1, "user", "127.0.0.1", true);
-        assert!(marked.starts_with("# >>> dsh-bas-remote s\n"));
-        assert!(marked.ends_with("# <<< dsh-bas-remote s"));
+        assert!(marked.starts_with("# >>> bas-remote s\n"));
+        assert!(marked.ends_with("# <<< bas-remote s"));
     }
 
     #[test]
@@ -244,10 +281,24 @@ mod tests {
         );
         let (stripped, removed) = strip_block(&text, "s");
         assert!(removed);
-        assert!(!stripped.contains("dsh-bas-remote"));
+        assert!(!stripped.contains("bas-remote"));
         assert!(stripped.contains("Host a"));
         assert!(stripped.contains("Host b"));
         assert!(!strip_block(&text, "nope").1);
+    }
+
+    #[test]
+    fn strips_blocks_written_under_the_old_name() {
+        // A config written by 0.6.x must be cleaned up, not left next to the
+        // new block: the same Host alias would otherwise appear twice.
+        let legacy =
+            "Host a\n# >>> dsh-bas-remote s\nHost s\n  Port 1\n# <<< dsh-bas-remote s\nHost b\n";
+        assert_eq!(managed_sections(legacy), vec!["s".to_string()]);
+        assert_eq!(managed_port(legacy, "s"), Some(1));
+        let (stripped, removed) = strip_block(legacy, "s");
+        assert!(removed);
+        assert!(!stripped.contains("dsh-bas-remote"));
+        assert!(stripped.contains("Host a") && stripped.contains("Host b"));
     }
 
     #[test]

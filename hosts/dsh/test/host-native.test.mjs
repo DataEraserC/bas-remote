@@ -14,7 +14,7 @@
 // so `npm test` still runs on a machine without a Rust toolchain.
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -136,7 +136,10 @@ await check('the state route answers with the snapshot shape the UI renders', as
   for (const key of ['landscapes', 'tunnels', 'forwardPorts', 'sshUser', 'sshConfigMode']) {
     assert.ok(key in body.state, `state.${key} is missing`)
   }
-  assert.equal(body.state.version, '0.6.0')
+  // Read from package.json, so the check tracks the manifest instead of
+  // needing an edit at every release.
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(body.state.version, version)
 })
 
 await check('a landscape registered through the route survives a reload', async () => {

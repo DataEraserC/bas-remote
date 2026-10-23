@@ -1,4 +1,0 @@
-# dsh-bas-remote bundle patch: registers the plugin in a profile's layer stack.
-- insert:
-    - id: dsh-bas-remote
-      name: 'dsh-bas-remote'
