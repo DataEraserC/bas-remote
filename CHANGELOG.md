@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1
+
+### Fixed
+- **Every dev-channel SSH handshake failed with `SshKey: format encoding error`, so no `bas_connect` got past sign-in.** SAP's dev-tunnel server pads the `ecdsa-sha2-nistp521` signature integers with a zero byte even where RFC 4251 § 5 does not require one, and `ssh-key` rejected the redundancy. `patches/internal-russh-forked-ssh-key` is a vendored copy of the crate that parses those signatures, selected with `[patch.crates-io]`, where a redundant leading zero is stripped instead of rejected. The zero that the sign bit does require is kept, so a well-formed signature decodes to the same value as before.
+
 ## 0.7.0
 
 ### Changed

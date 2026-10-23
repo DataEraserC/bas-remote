@@ -158,7 +158,7 @@ dependencies = [
 
 [[package]]
 name = "bas-api"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "bas-core",
  "futures-util",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "bas-cli"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "bas-core",
@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "bas-core"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -1195,8 +1195,6 @@ dependencies = [
 [[package]]
 name = "internal-russh-forked-ssh-key"
 version = "0.6.11+upstream-0.6.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0a77eae781ed6a7709fb15b64862fcca13d886b07c7e2786f5ed34e5e2b9187"
 dependencies = [
  "argon2",
  "bcrypt-pbkdf",

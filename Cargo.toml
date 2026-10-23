@@ -2,9 +2,11 @@
 resolver = "2"
 members = ["crates/bas-core", "crates/bas-api", "crates/bas-cli"]
 default-members = ["crates/bas-cli"]
+# Vendored patch target; built through the patch entry, not as a member.
+exclude = ["patches/internal-russh-forked-ssh-key"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/DataEraserC/bas-remote"
@@ -25,3 +27,9 @@ thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process", "signal"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 url = "2"
+
+# SAP's dev-tunnel SSH server pads ECDSA signature integers with a zero byte
+# that RFC 4251 forbids and `ssh-key` rejects. Patch in the vendored copy with
+# those redundant zeros stripped. See patches/internal-russh-forked-ssh-key.
+[patch.crates-io]
+internal-russh-forked-ssh-key = { path = "patches/internal-russh-forked-ssh-key" }
