@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+### Fixed
+- **Browser sign-in was impossible in 0.6.0: the loopback listener did not answer the CORS preflight.** The landscape page posts the token from `https://<landscape>` to `http://127.0.0.1:<port>/ext-login`, so the browser sends `OPTIONS` first and drops the `POST` unless the preflight allows the origin. The 0.5.x listener sent `access-control-allow-origin: *`, `allow-headers: content-type` and `allow-methods: POST, OPTIONS` and answered `OPTIONS` with 204; the Rust rewrite kept none of that, and the sign-in failed in the tab with the request never leaving it. The listener now answers the preflight and sends the same headers on every response.
+- **The hand-off response carried a hard-coded `content-length: 46` for a 52-byte body** and had switched from `application/json` `{"status":"ok"}` to an HTML page. The body is now the JSON the page expects, with the length taken from the body itself.
+- **A request split across TCP segments was parsed from the first read only**, so a body that arrived in two parts was seen as truncated JSON. The listener now reads the whole request — headers, then `content-length` bytes.
+- An unusable body is answered with `{"status":"error"}` (the 0.5.x contract) and the listener stays open for a retry, instead of failing the attempt on the first bad request.
+
 ## 0.6.0
 
 ### Changed

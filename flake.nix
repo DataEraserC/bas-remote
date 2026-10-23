@@ -64,7 +64,7 @@
             npmFlags = [ "--legacy-peer-deps" ];
             # Regenerate with `nix build .#default` after `npm install` changes
             # package-lock.json; the error names the hash it got.
-            npmDepsHash = "sha256-35KG2tJ+H+ZCuUaXI79ppy8+2qsWKmqSpBl6WlA1JBY=";
+            npmDepsHash = "sha256-N/ZPADTHx/jHwZGy2pG0Vi/8Ex6AJIFU7U9jAa2lxsc=";
             dontNpmBuild = true;
             linkKernelNodeModules = pkgs.dsh.dsh-kernel;
 

@@ -21,6 +21,30 @@ use tokio::sync::watch;
 /// How long one sign-in may stay pending before the listener gives up.
 pub const DEFAULT_LOGIN_TIMEOUT_SECS: u64 = 180;
 
+/// Headers the landscape login page needs to reach the loopback listener.
+///
+/// The hand-off is a cross-origin `fetch` from `https://<landscape>` to
+/// `http://127.0.0.1:<port>`, so the browser preflights it with `OPTIONS` and
+/// drops the `POST` unless the preflight is answered. 0.5.x sent these; the
+/// Rust rewrite lost them, which made every sign-in fail in the browser before
+/// the request left the tab.
+const CORS_HEADERS: &str = "\
+access-control-allow-origin: *\r\n\
+access-control-allow-headers: content-type\r\n\
+access-control-allow-methods: POST, OPTIONS\r\n\
+access-control-allow-private-network: true\r\n\
+access-control-max-age: 600\r\n";
+
+/// Largest hand-off request accepted; the token is a couple of kilobytes.
+const MAX_HANDOFF_BYTES: usize = 1024 * 1024;
+
+/// One request read off the hand-off socket.
+struct HandoffRequest {
+    method: String,
+    path: String,
+    body: String,
+}
+
 /// Where a sign-in attempt stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoginState {
@@ -86,34 +110,57 @@ pub async fn begin(landscape: &str, host: &str, port: u16) -> Result<(String, St
                 let Ok((mut socket, _peer)) = accepted else {
                     break;
                 };
-                // The hand-off is one small POST; read it, acknowledge, move on.
-                let mut buffer = vec![0u8; 64 * 1024];
-                let read = tokio::time::timeout(
+                // The hand-off is one small request; read it whole, answer,
+                // move on. A partial read is not enough: the body carries the
+                // token and may arrive in several segments.
+                let request = tokio::time::timeout(
                     std::time::Duration::from_secs(30),
-                    socket.read(&mut buffer),
+                    read_request(&mut socket),
                 )
                 .await;
-                let Ok(Ok(read)) = read else {
+                let Ok(Some(request)) = request else {
                     continue;
                 };
-                let request = String::from_utf8_lossy(&buffer[..read]).to_string();
-                let body = request
-                    .split("\r\n\r\n")
-                    .nth(1)
-                    .unwrap_or_default()
-                    .to_string();
-                let payload = parse_handoff(&body);
-                let (jwt, iasjwt) = match payload {
-                    Some(pair) => pair,
-                    None => {
-                        let _ = socket
-                            .write_all(b"HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n")
-                            .await;
-                        continue;
-                    }
+                let answer = match (request.method.as_str(), request.path.as_str()) {
+                    // Answer the preflight, or the browser never sends the POST.
+                    ("OPTIONS", _) => ("204 No Content", None, "", None),
+                    ("POST", "/ext-login") => match parse_handoff(&request.body) {
+                        Some((jwt, iasjwt)) => (
+                            "200 OK",
+                            Some("application/json"),
+                            "{\"status\":\"ok\"}",
+                            Some((jwt, iasjwt)),
+                        ),
+                        // Same contract as 0.5.x: the page sees a status it can
+                        // render, and the listener stays open for a retry.
+                        None => (
+                            "200 OK",
+                            Some("application/json"),
+                            "{\"status\":\"error\"}",
+                            None,
+                        ),
+                    },
+                    (_, "/ext-login") => (
+                        "405 Method Not Allowed",
+                        Some("text/plain"),
+                        "dsh-bas-remote: POST only",
+                        None,
+                    ),
+                    _ => (
+                        "404 Not Found",
+                        Some("text/plain"),
+                        "dsh-bas-remote: not found",
+                        None,
+                    ),
                 };
-                let response = b"HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: 46\r\n\r\n<html><body>You can close this window.</body></html>";
-                let _ = socket.write_all(response).await;
+                let (status, content_type, body, token) = answer;
+                let _ = socket
+                    .write_all(&response_bytes(status, content_type, body))
+                    .await;
+                let _ = socket.flush().await;
+                let Some((jwt, iasjwt)) = token else {
+                    continue;
+                };
                 let mut guard = logins().lock().expect("the login registry is not poisoned");
                 if let Some(entry) = guard.get_mut(&handle) {
                     entry.state = LoginState::Done { jwt, iasjwt };
@@ -163,7 +210,8 @@ fn parse_handoff(body: &str) -> Option<(String, String)> {
     }
     if let Ok(value) = serde_json::from_str::<Value>(body) {
         let jwt = value.get("jwt")?.as_str()?.to_string();
-        if jwt.is_empty() {
+        // The landscape sometimes posts an HTML error page instead of a token.
+        if jwt.is_empty() || jwt.starts_with('<') {
             return None;
         }
         let iasjwt = value
@@ -188,11 +236,82 @@ fn parse_handoff(body: &str) -> Option<(String, String)> {
             _ => {}
         }
     }
-    if jwt.is_empty() {
+    if jwt.is_empty() || jwt.starts_with('<') {
         None
     } else {
         Some((jwt, iasjwt))
     }
+}
+
+/// Find the end of the header block (`\r\n\r\n`), past the blank line.
+fn header_end(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|position| position + 4)
+}
+
+/// Parse the request line and `content-length` out of the head bytes.
+fn parse_head(head: &str) -> Option<(String, String, usize)> {
+    let mut lines = head.split("\r\n");
+    let mut request_line = lines.next()?.split_whitespace();
+    let method = request_line.next()?.to_ascii_uppercase();
+    let target = request_line.next()?;
+    let path = target.split('?').next().unwrap_or(target).to_string();
+    let mut content_length = 0usize;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("content-length") {
+            content_length = value.trim().parse().ok()?;
+        }
+    }
+    Some((method, path, content_length))
+}
+
+/// Read one whole request: headers, then `content-length` bytes of body.
+async fn read_request(socket: &mut tokio::net::TcpStream) -> Option<HandoffRequest> {
+    let mut buffer = Vec::with_capacity(8 * 1024);
+    let mut chunk = [0u8; 8 * 1024];
+    loop {
+        if let Some(end) = header_end(&buffer) {
+            let head = String::from_utf8_lossy(&buffer[..end]).to_string();
+            if let Some((method, path, content_length)) = parse_head(&head)
+                && buffer.len() >= end + content_length
+            {
+                let body_end = (end + content_length).min(buffer.len());
+                let body = String::from_utf8_lossy(&buffer[end..body_end]).to_string();
+                return Some(HandoffRequest { method, path, body });
+            }
+        }
+        if buffer.len() > MAX_HANDOFF_BYTES {
+            return None;
+        }
+        let read = socket.read(&mut chunk).await.ok()?;
+        if read == 0 {
+            return None;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+    }
+}
+
+/// Encode one response with the CORS headers the preflight requires.
+fn response_bytes(status: &str, content_type: Option<&str>, body: &str) -> Vec<u8> {
+    let mut head = format!("HTTP/1.1 {status}\r\n{CORS_HEADERS}");
+    if let Some(content_type) = content_type {
+        head.push_str("content-type: ");
+        head.push_str(content_type);
+        head.push_str("\r\n");
+    }
+    // Byte length, not character count: a hard-coded one truncated the body.
+    head.push_str(&format!(
+        "content-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    ));
+    let mut bytes = head.into_bytes();
+    bytes.extend_from_slice(body.as_bytes());
+    bytes
 }
 
 fn percent_decode(value: &str) -> String {
@@ -304,5 +423,155 @@ mod tests {
         );
         assert_eq!(parse_handoff(""), None);
         assert_eq!(parse_handoff("iasjwt=only"), None);
+        // An HTML error page is not a token.
+        assert_eq!(parse_handoff(r#"{"jwt":"<html>nope</html>"}"#), None);
+    }
+
+    #[test]
+    fn response_has_cors_and_a_truthful_content_length() {
+        let bytes = response_bytes("200 OK", Some("application/json"), "{\"status\":\"ok\"}");
+        let text = String::from_utf8(bytes).expect("ascii");
+        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"), "{text}");
+        assert!(
+            text.contains("access-control-allow-origin: *\r\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("access-control-allow-headers: content-type\r\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("access-control-allow-methods: POST, OPTIONS\r\n"),
+            "{text}"
+        );
+        let (head, body) = text.split_once("\r\n\r\n").expect("a header block");
+        let declared: usize = head
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length: "))
+            .expect("a content-length")
+            .trim()
+            .parse()
+            .expect("a number");
+        assert_eq!(
+            declared,
+            body.len(),
+            "content-length must be the byte length of the body"
+        );
+        assert_eq!(body, "{\"status\":\"ok\"}");
+    }
+
+    #[test]
+    fn reads_a_request_split_across_segments() {
+        // The body may arrive after the headers; `read_request` must wait for
+        // all of it instead of parsing whatever the first read returned.
+        let head = "POST /ext-login HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: 11\r\n\r\n";
+        assert_eq!(header_end(head.as_bytes()), Some(head.len()));
+        let (method, path, length) = parse_head(head).expect("a head");
+        assert_eq!(method, "POST");
+        assert_eq!(path, "/ext-login");
+        assert_eq!(length, 11);
+    }
+
+    #[tokio::test]
+    async fn answers_the_preflight_and_hands_the_token_over_once() {
+        let (id, _url, port) = begin("https://example.test", "127.0.0.1", 0)
+            .await
+            .expect("the listener starts");
+
+        // 1. The browser's preflight must be answered, or it never sends the POST.
+        let preflight = send(
+            port,
+            "OPTIONS /ext-login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+             Origin: https://example.test\r\n\
+             Access-Control-Request-Method: POST\r\n\
+             Access-Control-Request-Headers: content-type\r\n\r\n",
+        )
+        .await;
+        assert!(
+            preflight.starts_with("HTTP/1.1 204 No Content"),
+            "preflight must succeed: {preflight}"
+        );
+        assert!(
+            preflight.contains("access-control-allow-origin: *"),
+            "preflight must allow the origin: {preflight}"
+        );
+        assert!(
+            preflight.contains("access-control-allow-headers: content-type"),
+            "preflight must allow the JSON content type: {preflight}"
+        );
+
+        // 2. A bad body is answered, not dropped, and the listener stays open.
+        let bad = send(
+            port,
+            "POST /ext-login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+             content-type: application/json\r\ncontent-length: 2\r\n\r\n{}",
+        )
+        .await;
+        assert!(bad.starts_with("HTTP/1.1 200 OK"), "{bad}");
+        assert!(bad.ends_with("{\"status\":\"error\"}"), "{bad}");
+
+        // 3. The real hand-off returns `{"status":"ok"}` with the token.
+        let body = r#"{"jwt":"a.b.c","iasjwt":"x.y.z"}"#;
+        let request = format!(
+            "POST /ext-login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+             content-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let response = send(port, &request).await;
+        assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+        assert!(
+            response.contains("content-type: application/json"),
+            "{response}"
+        );
+        assert!(response.ends_with("{\"status\":\"ok\"}"), "{response}");
+        assert!(
+            !response.contains("<html>"),
+            "the page expects JSON, not an HTML page: {response}"
+        );
+
+        // 4. The token is handed out exactly once.
+        let first = poll(&id).expect("a poll");
+        assert_eq!(first["state"], "done");
+        assert_eq!(first["jwt"], "a.b.c");
+        let second = poll(&id).expect("a poll");
+        assert_eq!(second["state"], "consumed");
+
+        assert!(cancel(&id).expect("a cancel"));
+    }
+
+    #[tokio::test]
+    async fn unknown_paths_are_404_and_do_not_end_the_sign_in() {
+        let (id, _url, port) = begin("https://example.test", "127.0.0.1", 0)
+            .await
+            .expect("the listener starts");
+        let missing = send(port, "GET /favicon.ico HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").await;
+        assert!(missing.starts_with("HTTP/1.1 404 Not Found"), "{missing}");
+        assert!(
+            missing.contains("access-control-allow-origin: *"),
+            "{missing}"
+        );
+
+        // Still waiting: a stray request must not consume the sign-in.
+        assert_eq!(poll(&id).expect("a poll")["state"], "waiting");
+        assert!(cancel(&id).expect("a cancel"));
+    }
+
+    /// Send one raw request to the listener and return the raw response.
+    async fn send(port: u16, request: &str) -> String {
+        use tokio::io::AsyncWriteExt;
+
+        let mut socket = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("the listener is reachable");
+        socket
+            .write_all(request.as_bytes())
+            .await
+            .expect("the request is written");
+        let mut response = Vec::new();
+        tokio::io::AsyncReadExt::read_to_end(&mut socket, &mut response)
+            .await
+            .expect("the response is read");
+        String::from_utf8(response).expect("utf-8")
     }
 }
