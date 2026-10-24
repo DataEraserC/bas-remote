@@ -41,7 +41,12 @@ import { call, nativeStatus } from './native.js'
 
 export const name = 'bas-remote'
 
-export const inject = ['tools', 'credentials', 'systemPrompt', 'commands']
+// `commands` is deliberately absent: it is an optional service, and declaring
+// it here would turn "this harness has no command registry" into "bas-remote
+// does not load at all" — losing the tools, the web panel and the tunnels over
+// a surface the harness may simply not have. The command is registered through
+// ctx.reflect.get('commands') below, which skips it when the service is absent.
+export const inject = ['tools', 'credentials', 'systemPrompt']
 
 /** Status a dev space reports while its runtime is usable. */
 const DEV_SPACE_RUNNING = 'RUNNING'
@@ -1499,12 +1504,12 @@ export function apply(ctx, config) {
 
   // ── human command ─────────────────────────────────────────────────────────
 
-  ctx.commands.register({
+  const basCommand = {
     name: 'bas',
     description:
-      'SAP Business Application Studio remote dev spaces (status | login | logout | devspaces | start | stop | connect | disconnect | bridge | ports)',
+      'SAP Business Application Studio remote dev spaces (status | login | logout | add | forget | devspaces | start | stop | connect | disconnect | bridge | ports | strict)',
     input: {
-      hint: 'status | login <landscape> | devspaces [landscape] | start <dev space> | stop <dev space> | connect <dev space> | disconnect [dev space] | bridge [dev space] | ports [set <wsId> <drop> <bridge>|clear <wsId>] | logout <landscape>',
+      hint: 'status | login <landscape> | logout <landscape> | add <landscape> | forget <landscape> | devspaces [landscape] | start <dev space> | stop <dev space> | connect <dev space> | disconnect [dev space] | bridge [dev space] | ports [set <wsId> <drop> <bridge>|clear <wsId>] | strict [on|off]',
     },
     async handler(invocation) {
       const raw = String(invocation.rawInput ?? '').trim()
@@ -1665,17 +1670,56 @@ export function apply(ctx, config) {
             await forgetLandscape(landscape)
             return { kind: 'success', text: `Removed ${landscape}.` }
           }
+          case 'add': {
+            // The web panel can register a landscape without signing in to it
+            // (POST /bas-remote/landscape with action "add"); /bas login would
+            // also register it, but only as a side effect of signing in. Make
+            // the intent explicit so a TUI user can stage a landscape first.
+            if (!argument) {
+              return { kind: 'error', text: 'usage: /bas add <landscape-url>' }
+            }
+            const landscape = await registerLandscape(argument)
+            return {
+              kind: 'success',
+              text: `Added ${landscape}. Sign in with /bas login ${landscape}.`,
+            }
+          }
+          case 'strict': {
+            // Parity with the web panel's POST /bas-remote/strict, which is the
+            // only UI that could flip this before. Empty = toggle, like the web
+            // panel's button; on/off = set it explicitly.
+            const wants = String(argument || '').trim().toLowerCase()
+            if (wants === '') state.forwardPortsStrict = !effectiveStrict(config, state)
+            else if (wants === 'on' || wants === 'true') state.forwardPortsStrict = true
+            else if (wants === 'off' || wants === 'false') state.forwardPortsStrict = false
+            else {
+              return {
+                kind: 'error',
+                text: `unknown strict value "${argument}"; use on, off, or nothing to toggle`,
+              }
+            }
+            persist()
+            return {
+              kind: 'success',
+              text: effectiveStrict(config, state)
+                ? 'Port strictness: on (a fixed port that is occupied is an error)'
+                : 'Port strictness: off (fall back to a random port)',
+            }
+          }
           default:
             return {
               kind: 'error',
-              text: `unknown subcommand "${subcommand}"; use status, login, logout, forget, devspaces, start, stop, connect or disconnect`,
+              text: `unknown subcommand "${subcommand}"; use status, login, logout, add, forget, devspaces, start, stop, connect, disconnect, ports or strict`,
             }
         }
       } catch (error) {
         return { kind: 'error', text: error.message }
       }
     },
-  })
+  }
+
+  const commandRegistry = ctx.reflect.get('commands')
+  if (commandRegistry) commandRegistry.register(basCommand)
 
   // ── system prompt: active dev spaces ──────────────────────────────────────
 

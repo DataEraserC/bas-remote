@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.2
+
+Host-only release: the protocol layer is unchanged and stays at 0.7.1, so
+`crates/` is untouched and the Rust half does not need rebuilding.
+
+### Fixed
+- **The TUI could not do two things the web panel could.** The web panel and `/bas` had drifted: `POST /bas-remote/landscape` with action `add` and `POST /bas-remote/strict` existed as routes only, so a terminal user had no way to register a landscape without signing in to it in the same breath (only `/bas login <url>` registered one, as a side effect), and no way at all to flip port strictness. `/bas add <landscape>` and `/bas strict [on|off]` close both. A bare `/bas strict` toggles, which is what the panel's button does.
+
+### Changed
+- **The slash command is taken from the optional service instead of demanding it.** `@deepseek-ai/dsh-commands` was always an optional `peerDependency`, but `commands` also sat in the plugin's `inject` list — so its absence was a load failure for the whole plugin, taking the tools, the routes and the tunnels with it, not merely the loss of `/bas`. The command is now read with `ctx.reflect.get('commands')` and skipped when the service is missing, which makes the declared optionality true.
+
 ## 0.7.1
 
 ### Fixed

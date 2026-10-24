@@ -38,7 +38,7 @@ process.env.DSH_HOME = HOME_DIR
 const tools = []
 const ctx = {
   tools: { register: (tool) => tools.push(tool) },
-  commands: { register: () => {} },
+  reflect: { get: (name) => (name === 'commands' ? { register: () => {} } : undefined) },
   credentials: {
     readRecord: async () => ({ kind: 'grant', payload: { landscape: LANDSCAPE, jwt, obtainedAt: Date.now() } }),
     modifyRecord: async () => {},

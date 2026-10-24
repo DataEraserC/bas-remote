@@ -53,6 +53,7 @@ async function loadPlugin(overrides = {}) {
   const mod = await import('../lib/index.js')
   const routes = new Map()
   const tools = new Map()
+  const commands = new Map()
   let promptText = () => ''
 
   const makeInner = () => ({
@@ -62,9 +63,13 @@ async function loadPlugin(overrides = {}) {
     effect: (execute) => { if (typeof execute === 'function') execute(); return () => {} },
   })
 
+  // A real cordis context exposes every service through ctx.reflect.get, and
+  // bas-remote asks for `commands` that way because the service is optional.
+  // The stub has to model the same path, not the shortcut.
+  const commandSink = { register: (command) => commands.set(command.name, command) }
   const ctx = {
     tools: { register: (tool) => tools.set(tool.name, tool) },
-    commands: { register: () => {} },
+    reflect: { get: (name) => (name === 'commands' ? commandSink : undefined) },
     credentials: {
       readRecord: async () => undefined,
       modifyRecord: async () => {},
@@ -100,7 +105,7 @@ async function loadPlugin(overrides = {}) {
     return { status: code, body: payload ? JSON.parse(payload) : undefined }
   }
 
-  return { tools, call, prompt: () => promptText() }
+  return { tools, commands, call, prompt: () => promptText() }
 }
 
 const plugin = await loadPlugin()
@@ -178,6 +183,75 @@ await check('a pinned port is probed through the library, not guessed', async ()
 
 await check('the system prompt is empty while nothing is connected', async () => {
   assert.equal(plugin.prompt(), '')
+})
+
+await check('/bas is registered through the optional commands service', async () => {
+  // The TUI only sees ctx.commands, so this is what makes the plugin usable
+  // outside the web panel at all.
+  const command = plugin.commands.get('bas')
+  assert.ok(command, 'the bas command was never registered')
+  assert.equal(command.name, 'bas')
+  assert.match(command.input.hint, /add <landscape>/)
+  assert.match(command.input.hint, /strict \[on\|off\]/)
+})
+
+await check('/bas strict toggles, sets and rejects through one subcommand', async () => {
+  const command = plugin.commands.get('bas')
+  const run = (raw) => command.handler({ rawInput: raw })
+  // The schema default is strict=true, so the first bare call flips it off.
+  assert.match((await run('strict')).text, /off \(fall back to a random port\)/)
+  assert.match((await run('strict')).text, /on \(a fixed port that is occupied is an error\)/)
+  assert.match((await run('strict on')).text, /on \(a fixed port/)
+  assert.match((await run('strict off')).text, /off \(fall back/)
+  const bad = await run('strict maybe')
+  assert.equal(bad.kind, 'error')
+  assert.match(bad.text, /unknown strict value/)
+  // The live toggle has to land in the persisted state, not just in a local.
+  const snapshot = (await plugin.call('/bas-remote/state', 'GET')).body.state
+  assert.equal(snapshot.forwardPortsStrict, false)
+})
+
+await check('/bas add registers a landscape the way the web route does', async () => {
+  const command = plugin.commands.get('bas')
+  const empty = await command.handler({ rawInput: 'add' })
+  assert.equal(empty.kind, 'error')
+  assert.match(empty.text, /usage: \/bas add/)
+  // normalize_landscape is a pure string operation, so this needs no network
+  // and can assert the outcome instead of only the absence of a fallback.
+  const result = await command.handler({ rawInput: 'add https://example.invalid/landscape' })
+  assert.equal(result.kind, 'success')
+  assert.match(result.text, /^Added https:\/\/example\.invalid\./)
+  const snapshot = (await plugin.call('/bas-remote/state', 'GET')).body.state
+  assert.ok(snapshot.landscapes.some((entry) => entry.url === 'https://example.invalid'))
+})
+
+await check('the plugin loads even when the commands service is absent', async () => {
+  // ctx.reflect.get('commands') returning undefined must cost the /bas command
+  // and nothing else — the tools, the routes and the tunnels still come up.
+  const mod = await import('../lib/index.js')
+  const tools = new Map()
+  const makeInner = () => ({
+    get: (name) =>
+      name === 'webServer'
+        ? { register: () => () => {} }
+        : undefined,
+    effect: (execute) => { if (typeof execute === 'function') execute(); return () => {} },
+  })
+  const ctx = {
+    tools: { register: (tool) => tools.set(tool.name, tool) },
+    reflect: { get: () => undefined },
+    credentials: {
+      readRecord: async () => undefined,
+      modifyRecord: async () => {},
+      deleteRecord: async () => {},
+    },
+    systemPrompt: { section: () => {} },
+    effect: (execute) => { if (typeof execute === 'function') execute(); return () => {} },
+    inject: (deps, callback) => callback(makeInner()),
+    logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+  }
+  mod.apply(ctx, mod.Config({}))
+  assert.equal(tools.size, 10)
 })
 
 console.log(checks.join('\n'))

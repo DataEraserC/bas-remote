@@ -62,7 +62,7 @@ async function loadPlugin(configOverrides = {}) {
   const tools = []
   const ctx = {
     tools: { register: (tool) => tools.push(tool) },
-    commands: { register: () => {} },
+    reflect: { get: (name) => (name === 'commands' ? { register: () => {} } : undefined) },
     credentials: {
       readRecord: async () => undefined,
       modifyRecord: async () => {},

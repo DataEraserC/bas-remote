@@ -81,7 +81,9 @@ registers its tools, and each call fails with `unavailable — <how to build it>
   `bas_start`, `bas_stop`, `bas_connect`, `bas_disconnect`, `bas_bridge`,
   `bas_forget`.
 - **Human command** —
-  `/bas status|login|devspaces|start|stop|connect|disconnect|logout|forget|bridge|ports`.
+  `/bas status|login|devspaces|start|stop|connect|disconnect|logout|forget|add|bridge|ports|strict`.
+  Slash commands are the one surface the TUI renders, so every web-panel action
+  that a terminal user would miss has a subcommand here.
 - **Web panel** — settings section with one-click start / stop / connect /
   disconnect and live polling, plus a floating chip showing live tunnels.
 
