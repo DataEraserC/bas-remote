@@ -478,6 +478,82 @@ export function apply(ctx, config) {
     return state.landscapes.find((entry) => entry.url === landscape) ?? null
   }
 
+  // ── shared actions ────────────────────────────────────────────────────────
+  // Every mutation a user can make to the landscape registry or to port
+  // forwarding lives here, and /bas, the bas_* tools and the HTTP routes all
+  // call these. That is what stops the three surfaces from drifting: a fourth
+  // way to add a landscape does not get to invent its own validation.
+  //
+  // They return data, not prose, because the surfaces name each other
+  // differently — after adding a landscape the command tells a human to type
+  // "/bas login …", the tool tells a model to call bas_login.
+
+  /**
+   * Register a landscape without signing in to it.
+   * @param {string} spec - landscape URL or host.
+   * @returns {Promise<{landscape: string}>} its normalized URL.
+   */
+  async function addLandscape(spec) {
+    const raw = String(spec ?? '').trim()
+    if (!raw) throw new Error('a landscape URL is required')
+    return { landscape: await registerLandscape(raw) }
+  }
+
+  /**
+   * @returns {{assignments: Array<{wsId: string, dropbear: number, bridge: number}>, strict: boolean}}
+   */
+  function listPorts() {
+    return {
+      assignments: Object.entries(state.forwardPorts).map(([wsId, ports]) => ({
+        wsId,
+        dropbear: ports.dropbear ?? 0,
+        bridge: ports.bridge ?? 0,
+      })),
+      strict: effectiveStrict(config, state),
+    }
+  }
+
+  /**
+   * Pin the two forwarding ports of one dev space.
+   * @returns {{wsId: string, dropbear: number, bridge: number}}
+   */
+  function setPorts(wsId, dropbear, bridge) {
+    const key = String(wsId ?? '').trim()
+    if (!key) throw new Error('a dev space id is required')
+    const ports = checkForwardPorts({ dropbear: Number(dropbear) || 0, bridge: Number(bridge) || 0 }, key)
+    state.forwardPorts[key] = ports
+    persist()
+    return { wsId: key, dropbear: ports.dropbear, bridge: ports.bridge }
+  }
+
+  /**
+   * Drop the fixed ports of one dev space, which returns it to random ones.
+   * @returns {{wsId: string}}
+   */
+  function clearPorts(wsId) {
+    const key = String(wsId ?? '').trim()
+    if (!key) throw new Error('a dev space id is required')
+    delete state.forwardPorts[key]
+    persist()
+    return { wsId: key }
+  }
+
+  /**
+   * Flip whether an occupied fixed port is an error. The empty string toggles,
+   * which is what the web panel's button does.
+   * @param {string} wants - '', 'on' or 'off'.
+   * @returns {{strict: boolean}} the effective value afterwards.
+   */
+  function setStrict(wants) {
+    const value = String(wants ?? '').trim().toLowerCase()
+    if (value === '') state.forwardPortsStrict = !effectiveStrict(config, state)
+    else if (value === 'on' || value === 'true') state.forwardPortsStrict = true
+    else if (value === 'off' || value === 'false') state.forwardPortsStrict = false
+    else throw new Error(`unknown strict value "${wants}"; use on, off, or nothing to toggle`)
+    persist()
+    return { strict: effectiveStrict(config, state) }
+  }
+
   /**
    * The credential-store key of one landscape.
    * @param {string} landscape - normalized landscape origin.
@@ -1263,6 +1339,20 @@ export function apply(ctx, config) {
     }),
 
     defineTool({
+      name: 'bas_add',
+      description:
+        'Register a BAS landscape without signing in to it, so it can be named in bas_devspaces, bas_start and bas_connect later. Registering is normally a side effect of bas_login; use this when the landscape should be staged first and the browser hand-off is not possible yet. Landscapes are stored in plugin state, not in configuration.',
+      parameters: {
+        landscape: { type: 'string', required: true, description: 'Landscape URL or host, e.g. https://my.eu10.applicationstudio.cloud.sap' },
+      },
+      output,
+      async execute(args) {
+        const { landscape } = await addLandscape(args.landscape)
+        return { text: `Added ${landscape}. Sign in with bas_login landscape=${landscape}.` }
+      },
+    }),
+
+    defineTool({
       name: 'bas_login',
       description:
         'Sign in to a BAS landscape. Registers the landscape URL if new and starts the browser hand-off: the landscape login page posts the token back to this host on 127.0.0.1:55532. Returns the URL to open. Call it again with the same landscape and a waitMs to block until the hand-off lands (or use bas_status to poll). The token is kept in the harness credential store, not in configuration.',
@@ -1498,6 +1588,68 @@ export function apply(ctx, config) {
         }
       },
     }),
+    defineTool({
+      name: 'bas_ports',
+      description:
+        'Read or pin the two local ports a dev space is forwarded to. Each dev space normally gets free random loopback ports, which change every time it reconnects; pinning them (dropbear for exec, bridge for the SFTP side) keeps scripts, ssh config and bookmarks working across reconnects. Set 0 for a port to leave that one random. Requires bas_login only to look the dev space up — the assignment itself is local state.',
+      parameters: {
+        action: { type: 'string', enum: ['list', 'set', 'clear'], description: 'list reports every assignment, set pins one, clear returns it to random (default: list)' },
+        wsId: { type: 'string', description: 'Dev space id (see bas_devspaces); required for set and clear' },
+        dropbear: { type: 'integer', description: 'Local port for the exec endpoint (0 = random)' },
+        bridge: { type: 'integer', description: 'Local port for the SFTP bridge (0 = random)' },
+      },
+      output,
+      async execute(args) {
+        if (args.action === 'set') {
+          const result = setPorts(args.wsId, Number(args.dropbear) || 0, Number(args.bridge) || 0)
+          return {
+            text: [
+              `Pinned ${result.wsId} to dropbear=${result.dropbear || 'random'}, bridge=${result.bridge || 'random'}.`,
+              'It takes effect the next time the dev space connects.',
+            ].join('\n'),
+          }
+        }
+        if (args.action === 'clear') {
+          return { text: `${clearPorts(args.wsId).wsId} is back to random ports on its next connection.` }
+        }
+        const view = listPorts()
+        if (view.assignments.length === 0) {
+          return {
+            text: [
+              'No fixed port assignments; every dev space uses random ports.',
+              `Strict mode: ${view.strict ? 'on (an occupied pinned port is an error)' : 'off (fall back to a random port)'}`,
+            ].join('\n'),
+          }
+        }
+        return {
+          text: [
+            'Fixed port assignments:',
+            ...view.assignments.map(
+              ({ wsId, dropbear, bridge }) =>
+                `- ${wsId}: dropbear=${dropbear || 'random'}, bridge=${bridge || 'random'}`,
+            ),
+            `Strict mode: ${view.strict ? 'on (an occupied pinned port is an error)' : 'off (fall back to a random port)'}`,
+          ].join('\n'),
+        }
+      },
+    }),
+    defineTool({
+      name: 'bas_strict',
+      description:
+        'Set whether a pinned port that is already taken is an error. On means bas_ports pins are honoured or the connection fails; off means an occupied pin silently falls back to a random port. Omit `value` to toggle, which is what the settings page button does.',
+      parameters: {
+        value: { type: 'string', enum: ['on', 'off'], description: 'on or off; omitted toggles' },
+      },
+      output,
+      async execute(args) {
+        const { strict } = setStrict(args.value || '')
+        return {
+          text: strict
+            ? 'Port strictness: on — a pinned port that is occupied fails the connection.'
+            : 'Port strictness: off — a pinned port that is occupied falls back to a random one.',
+        }
+      },
+    }),
   ]
 
   for (const tool of tools) ctx.tools.register(tool)
@@ -1620,40 +1772,33 @@ export function apply(ctx, config) {
             // Parse: /bas ports [set|clear] [wsId] [dropbear] [bridge]
             const parts = argument.split(/\s+/).filter(Boolean)
             if (parts[0] === 'set' && parts.length >= 4) {
-              const wsId = parts[1]
-              const dropbear = parseInt(parts[2]) || 0
-              const bridge = parseInt(parts[3]) || 0
-              try {
-                state.forwardPorts[wsId] = checkForwardPorts({ dropbear, bridge }, wsId)
-              } catch (error) {
-                return { kind: 'error', text: error.message }
+              const result = setPorts(parts[1], parseInt(parts[2]) || 0, parseInt(parts[3]) || 0)
+              return {
+                kind: 'success',
+                text: `Set ports for ${result.wsId}: dropbear=${result.dropbear}, bridge=${result.bridge}`,
               }
-              persist()
-              return { kind: 'success', text: `Set ports for ${wsId}: dropbear=${dropbear}, bridge=${bridge}` }
             }
             if (parts[0] === 'clear' && parts.length >= 2) {
-              const wsId = parts[1]
-              delete state.forwardPorts[wsId]
-              persist()
-              return { kind: 'success', text: `Cleared port assignment for ${wsId}` }
+              return { kind: 'success', text: `Cleared port assignment for ${clearPorts(parts[1]).wsId}` }
             }
             // Show all ports
-            const entries = Object.entries(state.forwardPorts)
-            if (entries.length === 0) {
-              return { kind: 'success', text: 'No fixed port assignments. All dev spaces use random ports.\n\nUsage: /bas ports set <wsId> <dropbearPort> <bridgePort>' }
+            const view = listPorts()
+            if (view.assignments.length === 0) {
+              return {
+                kind: 'success',
+                text: 'No fixed port assignments. All dev spaces use random ports.\n\nUsage: /bas ports set <wsId> <dropbearPort> <bridgePort>',
+              }
             }
-            const lines = entries.map(([wsId, ports]) => {
-              const dropbear = ports.dropbear || 'random'
-              const bridge = ports.bridge || 'random'
-              return `  ${wsId}: dropbear=${dropbear}, bridge=${bridge}`
-            })
             return {
               kind: 'success',
               text: [
                 'Fixed port assignments:',
-                ...lines,
+                ...view.assignments.map(
+                  ({ wsId, dropbear, bridge }) =>
+                    `  ${wsId}: dropbear=${dropbear || 'random'}, bridge=${bridge || 'random'}`,
+                ),
                 '',
-                `Strict mode: ${effectiveStrict(config, state) ? 'on (error if port occupied)' : 'off (fallback to random)'}`,
+                `Strict mode: ${view.strict ? 'on (error if port occupied)' : 'off (fallback to random)'}`,
                 '',
                 'Usage: /bas ports set <wsId> <dropbearPort> <bridgePort>',
                 '       /bas ports clear <wsId>',
@@ -1678,30 +1823,19 @@ export function apply(ctx, config) {
             if (!argument) {
               return { kind: 'error', text: 'usage: /bas add <landscape-url>' }
             }
-            const landscape = await registerLandscape(argument)
+            const { landscape } = await addLandscape(argument)
             return {
               kind: 'success',
               text: `Added ${landscape}. Sign in with /bas login ${landscape}.`,
             }
           }
           case 'strict': {
-            // Parity with the web panel's POST /bas-remote/strict, which is the
-            // only UI that could flip this before. Empty = toggle, like the web
-            // panel's button; on/off = set it explicitly.
-            const wants = String(argument || '').trim().toLowerCase()
-            if (wants === '') state.forwardPortsStrict = !effectiveStrict(config, state)
-            else if (wants === 'on' || wants === 'true') state.forwardPortsStrict = true
-            else if (wants === 'off' || wants === 'false') state.forwardPortsStrict = false
-            else {
-              return {
-                kind: 'error',
-                text: `unknown strict value "${argument}"; use on, off, or nothing to toggle`,
-              }
-            }
-            persist()
+            // Parity with the web panel's POST /bas-remote/strict. Empty =
+            // toggle, like the web panel's button; on/off = set it explicitly.
+            const { strict } = setStrict(argument)
             return {
               kind: 'success',
-              text: effectiveStrict(config, state)
+              text: strict
                 ? 'Port strictness: on (a fixed port that is occupied is an error)'
                 : 'Port strictness: off (fall back to a random port)',
             }
@@ -1838,7 +1972,7 @@ export function apply(ctx, config) {
           const body = await readBody(req)
           const action = String(body.action ?? 'add')
           if (action === 'add') {
-            const landscape = await registerLandscape(body.landscape)
+            const { landscape } = await addLandscape(body.landscape)
             return sendJson(res, 200, { ok: true, landscape })
           }
           if (action === 'forget') {
@@ -1990,15 +2124,16 @@ export function apply(ctx, config) {
           // payload before touching state, so a bad entry cannot leave half of
           // a batch applied in memory but unwritten on disk.
           if (body.forwardPorts && typeof body.forwardPorts === 'object') {
-            const removals = []
-            const additions = []
+            // Validate the whole payload before touching state, so a bad entry
+            // cannot leave half a batch applied in memory but unwritten on disk.
+            const drops = []
+            const pins = []
             for (const [wsId, value] of Object.entries(body.forwardPorts)) {
-              if (value === null || value === undefined) removals.push(wsId)
-              else additions.push([wsId, checkForwardPorts(value, wsId)])
+              if (value === null || value === undefined) drops.push(wsId)
+              else pins.push({ wsId, ...checkForwardPorts(value, wsId) })
             }
-            for (const wsId of removals) delete state.forwardPorts[wsId]
-            for (const [wsId, ports] of additions) state.forwardPorts[wsId] = ports
-            persist()
+            for (const wsId of drops) clearPorts(wsId)
+            for (const { wsId, dropbear, bridge } of pins) setPorts(wsId, dropbear, bridge)
           }
           sendJson(res, 200, {
             ok: true,
@@ -2015,16 +2150,13 @@ export function apply(ctx, config) {
         if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
         try {
           const body = await readBody(req)
-          if (typeof body.strict === 'boolean') {
-            state.forwardPortsStrict = body.strict
-          } else {
-            // Toggle
-            state.forwardPortsStrict = !effectiveStrict(config, state)
-          }
-          persist()
+          // The panel sends a boolean, or nothing at all for its toggle button.
+          const { strict } = setStrict(
+            typeof body.strict === 'boolean' ? (body.strict ? 'on' : 'off') : '',
+          )
           sendJson(res, 200, {
             ok: true,
-            forwardPortsStrict: effectiveStrict(config, state),
+            forwardPortsStrict: strict,
           })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: error.message })

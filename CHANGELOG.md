@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.3
+
+Host-only release: the protocol layer is unchanged and stays at 0.7.1, so
+`crates/` is untouched and the Rust half does not need rebuilding.
+
+### Fixed
+- **The model could not do three things a human could.** Filling in the TUI gap
+  in 0.7.2 moved the gap to the third surface: `bas_*` had ten tools against
+  `/bas`'s thirteen subcommands, and the three that were missing were exactly
+  the two 0.7.2 added plus the one the panel had all along — `bas_add`,
+  `bas_ports` and `bas_strict`. A model helping someone connect a dev space
+  could neither stage a landscape, nor pin the ports a script or `~/.ssh/config`
+  entry depends on, nor say whether an occupied pin is an error.
+- **Each surface had its own copy of the mutations.** `/bas add`, `/bas ports`
+  and `/bas strict` each mutated `state` directly, as did the panel's routes,
+  with the ports route merging a batch and the command setting one dev space at
+  a time. `addLandscape` / `listPorts` / `setPorts` / `clearPorts` / `setStrict`
+  are now the single path, and the routes and the command and the tools all go
+  through them. The batch route still validates the whole payload before
+  touching state, so a bad entry cannot leave half a batch applied.
+
 ## 0.7.2
 
 Host-only release: the protocol layer is unchanged and stays at 0.7.1, so

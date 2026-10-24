@@ -77,13 +77,17 @@ registers its tools, and each call fails with `unavailable — <how to build it>
   plugin owns, or to editing `~/.ssh/config` itself. A nix/home-manager managed
   config is never written; the block is reported instead.
 - **SFTP where the dev space has none** — see [SFTP bridge](#sftp-bridge).
-- **Model tools** — `bas_status`, `bas_login`, `bas_logout`, `bas_devspaces`,
-  `bas_start`, `bas_stop`, `bas_connect`, `bas_disconnect`, `bas_bridge`,
-  `bas_forget`.
+- **Model tools** — `bas_status`, `bas_add`, `bas_login`, `bas_logout`,
+  `bas_devspaces`, `bas_start`, `bas_stop`, `bas_connect`, `bas_disconnect`,
+  `bas_bridge`, `bas_ports`, `bas_strict`, `bas_forget`.
 - **Human command** —
   `/bas status|login|devspaces|start|stop|connect|disconnect|logout|forget|add|bridge|ports|strict`.
   Slash commands are the one surface the TUI renders, so every web-panel action
   that a terminal user would miss has a subcommand here.
+- **One implementation, three surfaces** — `/bas`, the `bas_*` tools and the
+  HTTP routes call the same functions, so the three cannot drift apart. The
+  tools name the next step in the model's own terms (`bas_login landscape=…`)
+  rather than telling it to type a slash command.
 - **Web panel** — settings section with one-click start / stop / connect /
   disconnect and live polling, plus a floating chip showing live tunnels.
 

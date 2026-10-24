@@ -112,8 +112,9 @@ const plugin = await loadPlugin()
 
 await check('the plugin registers its whole tool surface', async () => {
   const expected = [
-    'bas_status', 'bas_login', 'bas_logout', 'bas_forget', 'bas_devspaces',
+    'bas_status', 'bas_add', 'bas_login', 'bas_logout', 'bas_forget', 'bas_devspaces',
     'bas_start', 'bas_stop', 'bas_connect', 'bas_disconnect', 'bas_bridge',
+    'bas_ports', 'bas_strict',
   ]
   assert.deepEqual([...plugin.tools.keys()].sort(), expected.sort())
 })
@@ -225,6 +226,90 @@ await check('/bas add registers a landscape the way the web route does', async (
   assert.ok(snapshot.landscapes.some((entry) => entry.url === 'https://example.invalid'))
 })
 
+await check('bas_add registers a landscape without signing in to it', async () => {
+  const landscape = 'https://tool-add.example.applicationstudio.cloud.sap'
+  const result = await plugin.tools.get('bas_add').execute({ landscape })
+  assert.match(result.text, /^Added /)
+  // The tool names the next call in the model's own terms; telling it to type
+  // a slash command would be the surface leaking into the wrong audience.
+  assert.match(result.text, /bas_login landscape=/)
+  assert.doesNotMatch(result.text, /\/bas login/)
+  const snapshot = (await plugin.call('/bas-remote/state', 'GET')).body.state
+  assert.ok(snapshot.landscapes.some((entry) => entry.url === landscape))
+  await assert.rejects(() => plugin.tools.get('bas_add').execute({}), /landscape/i)
+})
+
+await check("bas_ports pins, lists and clears a dev space's ports", async () => {
+  const ports = plugin.tools.get('bas_ports')
+  const wsId = 'ws-tool-ports'
+  const pinned = await ports.execute({ action: 'set', wsId, dropbear: 45010, bridge: 45011 })
+  assert.match(pinned.text, /dropbear=45010, bridge=45011/)
+  assert.match(pinned.text, /next time the dev space connects/)
+  const listed = await ports.execute({})
+  assert.match(listed.text, /Fixed port assignments:/)
+  assert.match(listed.text, new RegExp(wsId))
+  // 0 is "let the kernel choose", not a missing value, so it has to be accepted.
+  await ports.execute({ action: 'set', wsId, dropbear: 0, bridge: 0 })
+  await ports.execute({ action: 'clear', wsId })
+  assert.doesNotMatch((await ports.execute({})).text, new RegExp(wsId))
+  await assert.rejects(
+    () => ports.execute({ action: 'set', dropbear: 44000, bridge: 44001 }),
+    /dev space id is required/,
+  )
+  await assert.rejects(
+    () => ports.execute({ action: 'set', wsId, dropbear: 99999, bridge: 0 }),
+    /dropbear port for .* must be an integer 0-65535/,
+  )
+})
+
+await check('bas_strict sets and toggles the persisted flag', async () => {
+  const strict = plugin.tools.get('bas_strict')
+  assert.match((await strict.execute({ value: 'off' })).text, /falls back to a random one/)
+  assert.equal((await plugin.call('/bas-remote/state', 'GET')).body.state.forwardPortsStrict, false)
+  assert.match((await strict.execute({ value: 'on' })).text, /fails the connection/)
+  assert.equal((await plugin.call('/bas-remote/state', 'GET')).body.state.forwardPortsStrict, true)
+  // Omitting the value toggles, which is what the settings page button does.
+  assert.match((await strict.execute({})).text, /falls back to a random one/)
+})
+
+await check('the three surfaces are one implementation, not three', async () => {
+  // Whatever one of them does, the other two have to see. This is the check
+  // that fails the moment any surface grows its own copy of the logic.
+  const wsId = 'ws-shared'
+  await plugin.tools.get('bas_ports').execute({ action: 'set', wsId, dropbear: 46010, bridge: 46011 })
+  assert.deepEqual(
+    (await plugin.call('/bas-remote/state', 'GET')).body.state.forwardPorts[wsId],
+    { dropbear: 46010, bridge: 46011 },
+    'the route sees what the tool pinned',
+  )
+
+  await plugin.commands.get('bas').handler({ rawInput: `ports clear ${wsId}` })
+  assert.doesNotMatch(
+    (await plugin.tools.get('bas_ports').execute({})).text,
+    new RegExp(wsId),
+    'the tool sees what the command cleared',
+  )
+
+  const landscape = 'https://shared.example.applicationstudio.cloud.sap'
+  await plugin.tools.get('bas_add').execute({ landscape })
+  assert.ok(
+    (await plugin.call('/bas-remote/state', 'GET')).body.state.landscapes.some(
+      (entry) => entry.url === landscape,
+    ),
+    'the route sees what the tool registered',
+  )
+
+  // The panel's toggle button and the tool flip the same persisted flag.
+  const before = (await plugin.call('/bas-remote/state', 'GET')).body.state.forwardPortsStrict
+  await plugin.call('/bas-remote/strict', 'POST', {})
+  const after = (await plugin.call('/bas-remote/state', 'GET')).body.state.forwardPortsStrict
+  assert.equal(after, !before, 'the route toggles')
+  // Not `.includes('on')`: "random one" contains it, so that test passes for
+  // both states and proves nothing.
+  const toggled = (await plugin.tools.get('bas_strict').execute({})).text
+  assert.equal(toggled.includes('fails the connection'), !after, 'the tool toggles the flag the route wrote')
+})
+
 await check('the plugin loads even when the commands service is absent', async () => {
   // ctx.reflect.get('commands') returning undefined must cost the /bas command
   // and nothing else — the tools, the routes and the tunnels still come up.
@@ -251,7 +336,12 @@ await check('the plugin loads even when the commands service is absent', async (
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   }
   mod.apply(ctx, mod.Config({}))
-  assert.equal(tools.size, 10)
+  assert.equal(tools.size, 13)
+  assert.deepEqual(
+    [...tools.keys()].filter((name) => ['bas_add', 'bas_ports', 'bas_strict'].includes(name)).sort(),
+    ['bas_add', 'bas_ports', 'bas_strict'],
+    'the three surfaces the tools were missing are all registered',
+  )
 })
 
 console.log(checks.join('\n'))
