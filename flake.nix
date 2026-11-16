@@ -66,7 +66,7 @@
             # package-lock.json; the error names the hash it got.
             npmDepsHash = "sha256-+jdO87Ho58v+6IFkZQzn4T9ApI8mKebV1o5z8/433/M=";
             dontNpmBuild = true;
-            linkKernelNodeModules = pkgs.dsh.dsh-kernel;
+            installation = pkgs.dsh.dsh-runtime;
 
             postInstall = ''
               # The protocol layer ships beside the host, and the loader finds it
