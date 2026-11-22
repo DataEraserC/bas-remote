@@ -45,6 +45,11 @@
             # The workspace also builds a CLI; only the library is packaged here.
             buildAndTestSubdir = null;
             doCheck = false;
+            # nixpkgs' cargo-setup-hook forces AWS_LC_SYS_USE_SYSTEM=1 for the
+            # transitive aws-lc-sys (via rustls); hand its pkg-config probe a
+            # system AWS-LC to find, otherwise the build panics outright.
+            buildInputs = [ pkgs.aws-lc ];
+            nativeBuildInputs = [ pkgs.pkg-config ];
             meta = with pkgs.lib; {
               description = "BAS protocol layer (landscape REST, dev-channel SSH, SFTP bridge)";
               homepage = "https://github.com/DataEraserC/bas-remote";
